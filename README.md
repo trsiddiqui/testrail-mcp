@@ -58,6 +58,7 @@ The TestRail MCP server requires specific environment variables to authenticate 
    TESTRAIL_USERNAME=your-email@example.com
    TESTRAIL_API_KEY=your-api-key
    TESTRAIL_MCP_ALLOW_DELETES=false
+   TESTRAIL_ALLOWED_PROJECT_IDS=
    ```
 
    **Important Notes:**
@@ -66,6 +67,7 @@ The TestRail MCP server requires specific environment variables to authenticate 
    - `TESTRAIL_API_KEY` is your TestRail API key (not your password)
      - To generate an API key, log in to TestRail, go to "My Settings" > "API Keys" and create a new key
    - `TESTRAIL_MCP_ALLOW_DELETES` defaults to `false`. When false, destructive delete tools are not registered with the MCP server.
+   - `TESTRAIL_ALLOWED_PROJECT_IDS` is optional. When set to a comma-separated list such as `12,34`, mutation and delete tools are rejected unless the target entity belongs to one of those projects.
    - `preview_delete_section` is always available to return TestRail's soft-delete impact preview for a section.
    - When `TESTRAIL_MCP_ALLOW_DELETES=true`, `delete_section` still runs the soft-delete preview unless `confirm` exactly matches `DELETE SECTION <section_id>`.
 
@@ -108,7 +110,8 @@ In Claude Desktop, add a new server with the following configuration:
         "TESTRAIL_URL": "https://your-instance.testrail.io",
         "TESTRAIL_USERNAME": "your-email@example.com",
         "TESTRAIL_API_KEY": "your-api-key",
-        "TESTRAIL_MCP_ALLOW_DELETES": "false"
+        "TESTRAIL_MCP_ALLOW_DELETES": "false",
+        "TESTRAIL_ALLOWED_PROJECT_IDS": ""
       }
     }
   }
@@ -130,7 +133,8 @@ In Cursor, add a new custom tool with the following configuration:
     "TESTRAIL_URL": "https://your-instance.testrail.io",
     "TESTRAIL_USERNAME": "your-email@example.com",
     "TESTRAIL_API_KEY": "your-api-key",
-    "TESTRAIL_MCP_ALLOW_DELETES": "false"
+    "TESTRAIL_MCP_ALLOW_DELETES": "false",
+    "TESTRAIL_ALLOWED_PROJECT_IDS": ""
   }
 }
 ```
@@ -150,7 +154,8 @@ In Windsurf, add a new tool with the following configuration:
     "TESTRAIL_URL": "https://your-instance.testrail.io",
     "TESTRAIL_USERNAME": "your-email@example.com",
     "TESTRAIL_API_KEY": "your-api-key",
-    "TESTRAIL_MCP_ALLOW_DELETES": "false"
+    "TESTRAIL_MCP_ALLOW_DELETES": "false",
+    "TESTRAIL_ALLOWED_PROJECT_IDS": ""
   }
 }
 ```

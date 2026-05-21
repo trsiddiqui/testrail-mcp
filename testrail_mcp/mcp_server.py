@@ -8,6 +8,7 @@ from testrail_mcp.config import (
     TESTRAIL_USERNAME,
     TESTRAIL_API_KEY,
     TESTRAIL_MCP_ALLOW_DELETES,
+    TESTRAIL_ALLOWED_PROJECT_IDS,
 )
 
 
@@ -20,6 +21,154 @@ class TestRailMCPServer(FastMCP):
         self.client = TestRailClient(TESTRAIL_URL, TESTRAIL_USERNAME, TESTRAIL_API_KEY)
         self._register_tools()
         self._register_resources()
+
+    def _ensure_project_allowed(self, project_id: int, operation: str) -> None:
+        """Reject writes outside TESTRAIL_ALLOWED_PROJECT_IDS when configured."""
+        if not TESTRAIL_ALLOWED_PROJECT_IDS:
+            return
+
+        try:
+            project_id = int(project_id)
+        except (TypeError, ValueError) as exc:
+            raise PermissionError(
+                f"Cannot determine project for {operation}; refusing because "
+                "TESTRAIL_ALLOWED_PROJECT_IDS is set."
+            ) from exc
+
+        if project_id not in TESTRAIL_ALLOWED_PROJECT_IDS:
+            allowed_ids = ", ".join(
+                str(allowed_id) for allowed_id in sorted(TESTRAIL_ALLOWED_PROJECT_IDS)
+            )
+            raise PermissionError(
+                f"{operation} is not allowed for project {project_id}. "
+                f"Allowed projects: {allowed_ids}."
+            )
+
+    def _ensure_case_allowed(self, case_id: int, operation: str) -> None:
+        if TESTRAIL_ALLOWED_PROJECT_IDS:
+            self._ensure_project_allowed(
+                self._project_id_for_case(case_id, operation),
+                operation
+            )
+
+    def _ensure_section_allowed(self, section_id: int, operation: str) -> None:
+        if TESTRAIL_ALLOWED_PROJECT_IDS:
+            self._ensure_project_allowed(
+                self._project_id_for_section(section_id, operation),
+                operation
+            )
+
+    def _ensure_run_allowed(self, run_id: int, operation: str) -> None:
+        if TESTRAIL_ALLOWED_PROJECT_IDS:
+            self._ensure_project_allowed(
+                self._project_id_for_run(run_id, operation),
+                operation
+            )
+
+    def _ensure_test_allowed(self, test_id: int, operation: str) -> None:
+        if TESTRAIL_ALLOWED_PROJECT_IDS:
+            self._ensure_project_allowed(
+                self._project_id_for_test(test_id, operation),
+                operation
+            )
+
+    def _ensure_dataset_allowed(self, dataset_id: int, operation: str) -> None:
+        if TESTRAIL_ALLOWED_PROJECT_IDS:
+            self._ensure_project_allowed(
+                self._project_id_for_dataset(dataset_id, operation),
+                operation
+            )
+
+    def _reject_project_creation_when_allowlisted(self, operation: str) -> None:
+        if TESTRAIL_ALLOWED_PROJECT_IDS:
+            raise PermissionError(
+                f"{operation} is not allowed when TESTRAIL_ALLOWED_PROJECT_IDS "
+                "is set because the new project cannot already be allowlisted."
+            )
+
+    def _project_id_from_payload(
+        self,
+        payload: Dict,
+        entity_name: str,
+        entity_id: int,
+        operation: str
+    ) -> int:
+        project_id = payload.get('project_id')
+        if project_id is None:
+            raise PermissionError(
+                f"Cannot determine project for {operation} on "
+                f"{entity_name} {entity_id}; refusing because "
+                "TESTRAIL_ALLOWED_PROJECT_IDS is set."
+            )
+        try:
+            return int(project_id)
+        except (TypeError, ValueError) as exc:
+            raise PermissionError(
+                f"Invalid project ID for {operation} on {entity_name} "
+                f"{entity_id}; refusing because TESTRAIL_ALLOWED_PROJECT_IDS "
+                "is set."
+            ) from exc
+
+    def _project_id_for_suite(self, suite_id: int, operation: str) -> int:
+        suite = self.client.get_suite(suite_id)
+        return self._project_id_from_payload(suite, "suite", suite_id, operation)
+
+    def _project_id_for_section(self, section_id: int, operation: str) -> int:
+        section = self.client.get_section(section_id)
+        project_id = section.get('project_id')
+        if project_id is not None:
+            return self._project_id_from_payload(section, "section", section_id, operation)
+
+        suite_id = section.get('suite_id')
+        if suite_id is None:
+            raise PermissionError(
+                f"Cannot determine project for {operation} on section "
+                f"{section_id}; refusing because TESTRAIL_ALLOWED_PROJECT_IDS "
+                "is set."
+            )
+        return self._project_id_for_suite(suite_id, operation)
+
+    def _project_id_for_case(self, case_id: int, operation: str) -> int:
+        test_case = self.client.get_case(case_id)
+        project_id = test_case.get('project_id')
+        if project_id is not None:
+            return self._project_id_from_payload(test_case, "case", case_id, operation)
+
+        suite_id = test_case.get('suite_id')
+        if suite_id is not None:
+            return self._project_id_for_suite(suite_id, operation)
+
+        section_id = test_case.get('section_id')
+        if section_id is not None:
+            return self._project_id_for_section(section_id, operation)
+
+        raise PermissionError(
+            f"Cannot determine project for {operation} on case {case_id}; "
+            "refusing because TESTRAIL_ALLOWED_PROJECT_IDS is set."
+        )
+
+    def _project_id_for_run(self, run_id: int, operation: str) -> int:
+        run = self.client.get_run(run_id)
+        return self._project_id_from_payload(run, "run", run_id, operation)
+
+    def _project_id_for_test(self, test_id: int, operation: str) -> int:
+        test = self.client.get_test(test_id)
+        project_id = test.get('project_id')
+        if project_id is not None:
+            return self._project_id_from_payload(test, "test", test_id, operation)
+
+        run_id = test.get('run_id')
+        if run_id is not None:
+            return self._project_id_for_run(run_id, operation)
+
+        raise PermissionError(
+            f"Cannot determine project for {operation} on test {test_id}; "
+            "refusing because TESTRAIL_ALLOWED_PROJECT_IDS is set."
+        )
+
+    def _project_id_for_dataset(self, dataset_id: int, operation: str) -> int:
+        dataset = self.client.get_dataset(dataset_id)
+        return self._project_id_from_payload(dataset, "dataset", dataset_id, operation)
     
     def _register_tools(self):
         """Register all TestRail tools with the MCP server."""
@@ -50,6 +199,7 @@ class TestRailMCPServer(FastMCP):
                 show_announcement: Whether to show the announcement (optional)
                 suite_mode: The suite mode: 1 for single suite mode, 2 for single suite + baselines, 3 for multiple suites (optional)
             """
+            self._reject_project_creation_when_allowlisted("add_project")
             data = {'name': name}
             if announcement is not None:
                 data['announcement'] = announcement
@@ -77,6 +227,7 @@ class TestRailMCPServer(FastMCP):
                 show_announcement: Whether to show the announcement (optional)
                 is_completed: Whether the project is completed (optional)
             """
+            self._ensure_project_allowed(project_id, "update_project")
             data = {}
             if name is not None:
                 data['name'] = name
@@ -97,6 +248,7 @@ class TestRailMCPServer(FastMCP):
                 Args:
                     project_id: The ID of the project
                 """
+                self._ensure_project_allowed(project_id, "delete_project")
                 return self.client.delete_project(project_id)
         
         # Case tools
@@ -159,6 +311,7 @@ class TestRailMCPServer(FastMCP):
                     - additional_info: The text contents of the "Additional Info" field
                     - refs: Reference information for the "References" field
             """
+            self._ensure_section_allowed(section_id, "add_case")
             data = {'title': title}
             if type_id is not None:
                 data['type_id'] = type_id
@@ -217,6 +370,7 @@ class TestRailMCPServer(FastMCP):
                     - additional_info: The text contents of the "Additional Info" field
                     - refs: Reference information for the "References" field
             """
+            self._ensure_case_allowed(case_id, "update_case")
             data = {}
             if title is not None:
                 data['title'] = title
@@ -249,6 +403,7 @@ class TestRailMCPServer(FastMCP):
                 Args:
                     case_id: The ID of the test case
                 """
+                self._ensure_case_allowed(case_id, "delete_case")
                 return self.client.delete_case(case_id)
         # Section tools
         @self.tool("get_section", description="Retrieves details of a specific section by ID")
@@ -293,6 +448,7 @@ class TestRailMCPServer(FastMCP):
                 parent_id: The ID of the parent
 
             """
+            self._ensure_project_allowed(project_id, "add_section")
             data = {}
             data["name"] = name
             data["description"] = description
@@ -316,6 +472,7 @@ class TestRailMCPServer(FastMCP):
                 name: Name of the section
                 description: Description of the section
             """
+            self._ensure_section_allowed(section_id, "update_section")
             data = {}
             if name is not None:
                 data["name"] = name
@@ -332,6 +489,7 @@ class TestRailMCPServer(FastMCP):
             Args:
                 section_id: The ID of the section
             """
+            self._ensure_section_allowed(section_id, "preview_delete_section")
             return self.client.delete_section(section_id, soft=True)
 
         if TESTRAIL_MCP_ALLOW_DELETES:
@@ -346,6 +504,7 @@ class TestRailMCPServer(FastMCP):
                     section_id: The ID of the section
                     confirm: Must exactly match DELETE SECTION <section_id> to actually delete. Otherwise this returns a soft-delete preview.
                 """
+                self._ensure_section_allowed(section_id, "delete_section")
                 if confirm != f"DELETE SECTION {section_id}":
                     return self.client.delete_section(section_id, soft=True)
 
@@ -364,6 +523,11 @@ class TestRailMCPServer(FastMCP):
                 parent_id: ID of the new parent
                 after_id: ID of the section to be moved after
             """
+            self._ensure_section_allowed(section_id, "move_section")
+            if parent_id is not None:
+                self._ensure_section_allowed(parent_id, "move_section")
+            if after_id is not None:
+                self._ensure_section_allowed(after_id, "move_section")
             data = {}
             if parent_id is not None:
                 data["parent_id"] = parent_id
@@ -417,6 +581,7 @@ class TestRailMCPServer(FastMCP):
                 include_all: True for including all test cases of the test suite and false for a custom case selection (default: true) (optional)
                 case_ids: An array of case IDs for the custom case selection (optional)
             """
+            self._ensure_project_allowed(project_id, "add_run")
             data = {
                 'suite_id': suite_id,
                 'name': name
@@ -455,6 +620,7 @@ class TestRailMCPServer(FastMCP):
                 include_all: True for including all test cases of the test suite and false for a custom case selection (default: true) (optional)
                 case_ids: An array of case IDs for the custom case selection (optional)
             """
+            self._ensure_run_allowed(run_id, "update_run")
             data = {}
             if name is not None:
                 data['name'] = name
@@ -478,6 +644,7 @@ class TestRailMCPServer(FastMCP):
             Args:
                 run_id: The ID of the test run
             """
+            self._ensure_run_allowed(run_id, "close_run")
             return self.client.close_run(run_id)
         
         if TESTRAIL_MCP_ALLOW_DELETES:
@@ -489,6 +656,7 @@ class TestRailMCPServer(FastMCP):
                 Args:
                     run_id: The ID of the test run
                 """
+                self._ensure_run_allowed(run_id, "delete_run")
                 return self.client.delete_run(run_id)
         
         # Results tools
@@ -524,6 +692,7 @@ class TestRailMCPServer(FastMCP):
                 defects: A comma-separated list of defects to link to the test result (optional)
                 assignedto_id: The ID of a user the test should be assigned to (optional)
             """
+            self._ensure_test_allowed(test_id, "add_result")
             data = {
                 'status_id': status_id
             }
@@ -574,6 +743,7 @@ class TestRailMCPServer(FastMCP):
                 name: The name of the dataset
                 description: The description of the dataset (optional)
             """
+            self._ensure_project_allowed(project_id, "add_dataset")
             data = {
                 'name': name
             }
@@ -595,6 +765,7 @@ class TestRailMCPServer(FastMCP):
                 name: The name of the dataset (optional)
                 description: The description of the dataset (optional)
             """
+            self._ensure_dataset_allowed(dataset_id, "update_dataset")
             data = {}
             if name is not None:
                 data['name'] = name
@@ -611,6 +782,7 @@ class TestRailMCPServer(FastMCP):
                 Args:
                     dataset_id: The ID of the dataset
                 """
+                self._ensure_dataset_allowed(dataset_id, "delete_dataset")
                 return self.client.delete_dataset(dataset_id)
     
     def _register_resources(self):

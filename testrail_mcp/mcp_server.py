@@ -3,7 +3,12 @@ from typing import Dict, List, Any, Optional, Union
 from fastmcp import FastMCP
 
 from testrail_mcp.testrail_client import TestRailClient
-from testrail_mcp.config import TESTRAIL_URL, TESTRAIL_USERNAME, TESTRAIL_API_KEY
+from testrail_mcp.config import (
+    TESTRAIL_URL,
+    TESTRAIL_USERNAME,
+    TESTRAIL_API_KEY,
+    TESTRAIL_MCP_ALLOW_DELETES,
+)
 
 
 class TestRailMCPServer(FastMCP):
@@ -83,15 +88,16 @@ class TestRailMCPServer(FastMCP):
                 data['is_completed'] = is_completed
             return self.client.update_project(project_id, data)
         
-        @self.tool("delete_project", description="Delete a project")
-        def delete_project(project_id: int) -> Dict:
-            """
-            Delete a project.
-            
-            Args:
-                project_id: The ID of the project
-            """
-            return self.client.delete_project(project_id)
+        if TESTRAIL_MCP_ALLOW_DELETES:
+            @self.tool("delete_project", description="Delete a project")
+            def delete_project(project_id: int) -> Dict:
+                """
+                Delete a project.
+
+                Args:
+                    project_id: The ID of the project
+                """
+                return self.client.delete_project(project_id)
         
         # Case tools
         @self.tool("get_case", description="Get a test case by ID")
@@ -234,15 +240,16 @@ class TestRailMCPServer(FastMCP):
                 data['custom_expected'] = custom_expected
             return self.client.update_case(case_id, data)
         
-        @self.tool("delete_case", description="Delete a test case")
-        def delete_case(case_id: int) -> Dict:
-            """
-            Delete a test case.
-            
-            Args:
-                case_id: The ID of the test case
-            """
-            return self.client.delete_case(case_id)
+        if TESTRAIL_MCP_ALLOW_DELETES:
+            @self.tool("delete_case", description="Delete a test case")
+            def delete_case(case_id: int) -> Dict:
+                """
+                Delete a test case.
+
+                Args:
+                    case_id: The ID of the test case
+                """
+                return self.client.delete_case(case_id)
         # Section tools
         @self.tool("get_section", description="Retrieves details of a specific section by ID")
         def get_section(section_id: int) -> Dict:
@@ -317,19 +324,32 @@ class TestRailMCPServer(FastMCP):
 
             return self.client.update_section(section_id, data)
 
-        @self.tool("delete_section", description="Deletes a section")
-        def delete_section(
-            section_id : int,
-            soft: bool) -> Dict:
+        @self.tool("preview_delete_section", description="Preview deleting a section")
+        def preview_delete_section(section_id: int) -> Dict:
             """
-            Deletes an existing section
+            Preview the impact of deleting an existing section.
             
             Args:
                 section_id: The ID of the section
-                soft: Omitting the soft parameter, or submitting soft=0 will delete the section and its test cases If soft=1, this will return data on the number of affected tests, cases, etc.
             """
+            return self.client.delete_section(section_id, soft=True)
 
-            return self.client.delete_section(section_id, soft)
+        if TESTRAIL_MCP_ALLOW_DELETES:
+            @self.tool("delete_section", description="Preview or delete a section")
+            def delete_section(
+                section_id : int,
+                confirm: Optional[str] = None) -> Dict:
+                """
+                Preview or delete an existing section.
+
+                Args:
+                    section_id: The ID of the section
+                    confirm: Must exactly match DELETE SECTION <section_id> to actually delete. Otherwise this returns a soft-delete preview.
+                """
+                if confirm != f"DELETE SECTION {section_id}":
+                    return self.client.delete_section(section_id, soft=True)
+
+                return self.client.delete_section(section_id, soft=False)
 
         @self.tool("move_section", description="Moves a section to a new position in the test hierarchy")
         def move_section(
@@ -460,15 +480,16 @@ class TestRailMCPServer(FastMCP):
             """
             return self.client.close_run(run_id)
         
-        @self.tool("delete_run", description="Delete a test run")
-        def delete_run(run_id: int) -> Dict:
-            """
-            Delete a test run.
-            
-            Args:
-                run_id: The ID of the test run
-            """
-            return self.client.delete_run(run_id)
+        if TESTRAIL_MCP_ALLOW_DELETES:
+            @self.tool("delete_run", description="Delete a test run")
+            def delete_run(run_id: int) -> Dict:
+                """
+                Delete a test run.
+
+                Args:
+                    run_id: The ID of the test run
+                """
+                return self.client.delete_run(run_id)
         
         # Results tools
         @self.tool("get_results", description="Get all test results for a test")
@@ -581,15 +602,16 @@ class TestRailMCPServer(FastMCP):
                 data['description'] = description
             return self.client.update_dataset(dataset_id, data)
         
-        @self.tool("delete_dataset", description="Delete a dataset")
-        def delete_dataset(dataset_id: int) -> Dict:
-            """
-            Delete a dataset.
-            
-            Args:
-                dataset_id: The ID of the dataset
-            """
-            return self.client.delete_dataset(dataset_id)
+        if TESTRAIL_MCP_ALLOW_DELETES:
+            @self.tool("delete_dataset", description="Delete a dataset")
+            def delete_dataset(dataset_id: int) -> Dict:
+                """
+                Delete a dataset.
+
+                Args:
+                    dataset_id: The ID of the dataset
+                """
+                return self.client.delete_dataset(dataset_id)
     
     def _register_resources(self):
         """Register all TestRail resources with the MCP server."""
